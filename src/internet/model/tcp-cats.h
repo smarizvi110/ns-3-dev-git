@@ -95,52 +95,48 @@ protected:
     int Send(Ptr<Packet> p, uint32_t flags) override;
 
     /**
-     * \brief Override SendDataPacket to use CATS conductor logic
-     * \param seq sequence number to send
-     * \param maxSize maximum segment size
-     * \param withAck whether to send with ACK
-     * \return the size of the packet sent
+     * \brief CATS Conductor - feeds data from priority queues to base class buffer
+     * This method feeds data from priority queues to the base class buffer
      */
-    uint32_t SendDataPacket(SequenceNumber32 seq, uint32_t maxSize, bool withAck) override;
+    void ConductorFeedData();
 
     /**
-     * \brief Add data to appropriate priority queue
-     * \param data the data to queue
-     * \param dataSize size of the data
-     * \param priority the priority level
+     * \brief Override SetSndBufSize to manage CATS buffer limits
+     * \param size the new buffer size
      */
-    virtual void EnqueueData(const uint8_t* data, uint32_t dataSize, uint8_t priority);
+    void SetSndBufSize(uint32_t size) override;
+
+    /**
+     * \brief Override ReceivedAck to trigger Conductor after ACK processing
+     * \param packet the received packet
+     * \param tcpHeader the TCP header
+     */
+    void ReceivedAck(Ptr<Packet> packet, const TcpHeader& tcpHeader) override;
 
 private:
     /**
-     * \brief Data item structure for priority queues
+     * \brief Transmission item structure for priority queues
      */
-    struct CatsDataItem
+    struct CatsTxItem
     {
-        uint8_t* data;        //!< Pointer to data
-        uint32_t size;        //!< Size of data
-        Time timestamp;       //!< When this data was queued
+        Ptr<Packet> packet;      //!< The packet to transmit
+        Time enqueueTime;        //!< When this item was queued
         
-        CatsDataItem(const uint8_t* d, uint32_t s) 
-            : size(s), timestamp(Simulator::Now())
+        CatsTxItem(Ptr<Packet> p) 
+            : packet(p), enqueueTime(Simulator::Now())
         {
-            data = new uint8_t[size];
-            std::memcpy(data, d, size);
-        }
-        
-        ~CatsDataItem()
-        {
-            delete[] data;
         }
     };
 
     // CATS Priority Queues (0 = highest priority, 4 = lowest)
-    std::queue<CatsDataItem*> m_txBufferPrio0; //!< Priority 0 queue (highest)
-    std::queue<CatsDataItem*> m_txBufferPrio1; //!< Priority 1 queue
-    std::queue<CatsDataItem*> m_txBufferPrio2; //!< Priority 2 queue  
-    std::queue<CatsDataItem*> m_txBufferPrio3; //!< Priority 3 queue
-    std::queue<CatsDataItem*> m_txBufferPrio4; //!< Priority 4 queue (lowest)
+    std::queue<CatsTxItem> m_txBufferPrio0; //!< Priority 0 queue (highest)
+    std::queue<CatsTxItem> m_txBufferPrio1; //!< Priority 1 queue
+    std::queue<CatsTxItem> m_txBufferPrio2; //!< Priority 2 queue  
+    std::queue<CatsTxItem> m_txBufferPrio3; //!< Priority 3 queue
+    std::queue<CatsTxItem> m_txBufferPrio4; //!< Priority 4 queue (lowest)
 
+    // Buffer management - rely on base TCP buffer through GetTxAvailable()
+    
     // Fairness mechanism - prevent starvation
     Time m_fairnessTimeout;           //!< Timeout for fairness mechanism
     Time m_lastSentTime[5];          //!< Last send time for each priority
@@ -153,13 +149,19 @@ private:
      * \param priority the priority level (0-4)
      * \return reference to the queue
      */
-    std::queue<CatsDataItem*>& GetPriorityQueue(uint8_t priority);
+    std::queue<CatsTxItem>& GetPriorityQueue(uint8_t priority);
     
     /**
      * \brief Check if any priority queue has data
      * \return true if any queue has data
      */
     bool HasQueuedData() const;
+    
+    /**
+     * \brief Get total bytes queued across all priority queues
+     * \return total bytes in all CATS priority queues
+     */
+    uint32_t GetTotalQueuedBytes() const;
     
     /**
      * \brief Get the highest priority queue with data (considering fairness)

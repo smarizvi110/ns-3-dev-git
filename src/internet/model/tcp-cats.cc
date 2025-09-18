@@ -77,6 +77,20 @@ TcpCats::Fork()
     return CopyObject<TcpCats>(this);
 }
 
+void
+TcpCats::SetSndBufSize(uint32_t size)
+{
+    NS_LOG_FUNCTION(this << size);
+    
+    // Call base class to set the underlying TCP buffer size
+    TcpSocketBase::SetSndBufSize(size);
+    
+    // CATS will use base class buffer directly - no separate limit needed
+    // We'll check GetTxAvailable() for actual buffer space
+    
+    NS_LOG_INFO("CATS: Set base TCP buffer size to " << size << " bytes");
+}
+
 int
 TcpCats::Send(Ptr<Packet> p, uint32_t flags)
 {
@@ -88,6 +102,17 @@ TcpCats::Send(Ptr<Packet> p, uint32_t flags)
         return TcpSocketBase::Send(p, flags);
     }
     
+    uint32_t packetSize = p->GetSize();
+    
+    // Check if base TCP buffer has space for this packet
+    uint32_t availableSpace = GetTxAvailable();
+    if (availableSpace == 0)
+    {
+        NS_LOG_INFO("CATS: Interceptor rejecting packet - base TCP buffer full. "
+                    << "Application should retry later or implement backpressure handling");
+        return 0; // Buffer full - reject packet
+    }
+    
     // Extract priority from packet tag
     uint8_t priority = 2; // Default priority (middle)
     PriorityTag priorityTag;
@@ -96,107 +121,201 @@ TcpCats::Send(Ptr<Packet> p, uint32_t flags)
         priority = priorityTag.GetPriority();
         NS_LOG_INFO("CATS: Found priority tag with priority " << (uint32_t)priority);
     }
+    else if (p->FindFirstMatchingByteTag(priorityTag))
+    {
+        priority = priorityTag.GetPriority();
+        NS_LOG_INFO("CATS: Found priority byte tag with priority " << (uint32_t)priority);
+    }
     else
     {
         NS_LOG_INFO("CATS: No priority tag found, using default priority " << (uint32_t)priority);
     }
     
-    // For now, let's call the base class Send() to ensure proper TCP behavior
-    // and add our priority management on top
-    int result = TcpSocketBase::Send(p, flags);
-    
-    if (result > 0)
+    // Clamp priority to valid range
+    if (priority > 4)
     {
-        // Successfully queued - track this for priority management
-        uint32_t size = p->GetSize();
-        if (size > 0)
-        {
-            uint8_t* buffer = new uint8_t[size];
-            p->CopyData(buffer, size);
-            
-            // Add to appropriate priority queue for future management
-            EnqueueData(buffer, size, priority);
-            
-            delete[] buffer;
-            
-            NS_LOG_INFO("CATS: Queued " << size << " bytes with priority " << (uint32_t)priority);
-        }
+        priority = 4;
     }
     
-    return result;
-}
-
-uint32_t
-TcpCats::SendDataPacket(SequenceNumber32 seq, uint32_t maxSize, bool withAck)
-{
-    NS_LOG_FUNCTION(this << seq << maxSize << withAck);
+    // Create a copy of the packet to store in our queue
+    Ptr<Packet> packetCopy = p->Copy();
     
-    if (!m_catsEnabled)
-    {
-        // If CATS is disabled, use standard TCP behavior
-        return TcpSocketBase::SendDataPacket(seq, maxSize, withAck);
-    }
+    // Add to appropriate priority queue
+    CatsTxItem item(packetCopy);
+    std::queue<CatsTxItem>& queue = GetPriorityQueue(priority);
+    queue.push(item);
     
-    NS_LOG_INFO("CATS SendDataPacket called - seq=" << seq << " maxSize=" << maxSize);
+    NS_LOG_INFO("CATS: Interceptor accepted " << packetSize << " bytes with priority " << (uint32_t)priority 
+                << " (base TCP buffer available: " << GetTxAvailable() << " bytes, total queued data in CATS: " 
+                << GetTotalQueuedBytes() << " bytes)");
     
-    // Call the base class to handle the actual packet transmission
-    // Our priority tags should already be on the packets from Send() method
-    uint32_t sent = TcpSocketBase::SendDataPacket(seq, maxSize, withAck);
+    // Trigger the Conductor to start feeding data to the base class
+    ConductorFeedData();
     
-    if (sent > 0)
-    {
-        NS_LOG_INFO("CATS: Sent " << sent << " bytes through TCP layer");
-    }
-    
-    return sent;
+    return packetSize; // Successfully accepted
 }
 
 int
 TcpCats::SendWithPriority(Ptr<Packet> packet, uint8_t priority)
 {
-    NS_LOG_FUNCTION(this << packet << (uint32_t)priority);
+    NS_LOG_FUNCTION(this << packet << priority);
     
-    if (priority > 4)
+    if (!m_catsEnabled)
     {
-        NS_LOG_ERROR("Invalid CATS priority: " << (uint32_t)priority);
-        return -1;
+        // If CATS is disabled, use standard TCP behavior
+        return TcpSocketBase::Send(packet, 0);
     }
     
-    // Extract data from packet
-    uint32_t size = packet->GetSize();
-    uint8_t* buffer = new uint8_t[size];
-    packet->CopyData(buffer, size);
+    // Clamp priority to valid range
+    if (priority > 4)
+    {
+        priority = 4;
+    }
     
-    // Add to appropriate priority queue
-    EnqueueData(buffer, size, priority);
+    // Add priority tag to the packet
+    PriorityTag priorityTag;
+    priorityTag.SetPriority(priority);
+    packet->AddPacketTag(priorityTag);
     
-    delete[] buffer;
+    NS_LOG_INFO("CATS: SendWithPriority called with priority " << (uint32_t)priority);
     
-    NS_LOG_INFO("CATS: Queued " << size << " bytes with priority " << (uint32_t)priority);
-    
-    return size;
+    // Use the regular Send method which will extract the priority tag
+    return Send(packet, 0);
 }
 
 void
-TcpCats::EnqueueData(const uint8_t* data, uint32_t dataSize, uint8_t priority)
+TcpCats::ConductorFeedData()
 {
-    NS_LOG_FUNCTION(this << dataSize << (uint32_t)priority);
+    NS_LOG_FUNCTION(this);
     
-    if (priority > 4)
+    if (!m_catsEnabled)
     {
-        NS_LOG_ERROR("Invalid priority level: " << (uint32_t)priority);
+        // If CATS is disabled, use standard TCP behavior
         return;
     }
     
-    CatsDataItem* item = new CatsDataItem(data, dataSize);
-    std::queue<CatsDataItem*>& queue = GetPriorityQueue(priority);
-    queue.push(item);
+    uint32_t totalQueued = GetTotalQueuedBytes();
+    NS_LOG_INFO("CATS: Conductor starting - " << totalQueued << " bytes in priority queues, "
+                << GetTxAvailable() << " bytes available in base TCP buffer");
     
-    NS_LOG_INFO("CATS: Enqueued " << dataSize << " bytes to priority " << (uint32_t)priority 
-                << " queue (now has " << queue.size() << " items)");
+    // Continue feeding the base class buffer as long as:
+    // 1. We have data in our priority queues
+    // 2. The base class buffer has space
+    while (HasQueuedData())
+    {
+        // Check if base class buffer has space
+        if (GetTxAvailable() == 0)
+        {
+            NS_LOG_INFO("CATS: Conductor paused - base TCP buffer full. "
+                        << GetTotalQueuedBytes() << " bytes remain in CATS queues awaiting TCP transmission");
+            break;
+        }
+        
+        // Perform priority and fairness selection
+        uint8_t selectedPriority = GetNextPriorityToServe();
+        if (selectedPriority > 4)
+        {
+            NS_LOG_INFO("CATS: No eligible priority queue found");
+            break;
+        }
+        
+        // Get the selected queue
+        std::queue<CatsTxItem>& selectedQueue = GetPriorityQueue(selectedPriority);
+        if (selectedQueue.empty())
+        {
+            NS_LOG_ERROR("CATS: Selected queue is empty - this should not happen");
+            break;
+        }
+        
+        // Get the front item
+        CatsTxItem& item = selectedQueue.front();
+        Ptr<Packet> largePacket = item.packet;
+        
+        // Calculate chunk size (single segment worth of data)
+        uint32_t chunkSize = std::min(GetSegSize(), largePacket->GetSize());
+        
+        // Create a new small packet with the chunk of data
+        Ptr<Packet> newSmallPacket = Create<Packet>();
+        if (chunkSize > 0)
+        {
+            // Extract the chunk from the original packet
+            Ptr<Packet> chunk = largePacket->CreateFragment(0, chunkSize);
+            newSmallPacket = chunk;
+            
+            // Copy priority tag from original packet to the new small packet
+            PriorityTag priorityTag;
+            if (largePacket->PeekPacketTag(priorityTag))
+            {
+                newSmallPacket->AddPacketTag(priorityTag);
+                NS_LOG_INFO("CATS: Copied priority tag " << (uint32_t)priorityTag.GetPriority() << " to segment");
+            }
+            else if (largePacket->FindFirstMatchingByteTag(priorityTag))
+            {
+                newSmallPacket->AddByteTag(priorityTag);
+                NS_LOG_INFO("CATS: Copied priority byte tag " << (uint32_t)priorityTag.GetPriority() << " to segment");
+            }
+        }
+        
+        // Feed this single chunk to the base class
+        int sentBytes = TcpSocketBase::Send(newSmallPacket, 0);
+        
+        if (sentBytes <= 0)
+        {
+            NS_LOG_INFO("CATS: Conductor paused - base TCP temporarily cannot accept more data. "
+                        << GetTotalQueuedBytes() << " bytes remain in CATS queues");
+            break;
+        }
+        
+        NS_LOG_INFO("CATS: Feeder delivered " << sentBytes << " bytes from priority " << (uint32_t)selectedPriority 
+                    << " to base TCP (base buffer available: " << GetTxAvailable() 
+                    << ", CATS queue remaining: " << GetTotalQueuedBytes() << " bytes)");
+        
+        // Update fairness timestamp
+        m_lastSentTime[selectedPriority] = Simulator::Now();
+        
+        // Remove the sent bytes from the original packet
+        largePacket->RemoveAtStart(sentBytes);
+        
+        // If the original packet is now empty, remove it from the queue
+        if (largePacket->GetSize() == 0)
+        {
+            selectedQueue.pop();
+            NS_LOG_INFO("CATS: Priority " << (uint32_t)selectedPriority << " packet fully transmitted");
+        }
+    }
+    
+    uint32_t remainingQueued = GetTotalQueuedBytes();
+    if (remainingQueued > 0)
+    {
+        NS_LOG_INFO("CATS: Conductor finished - " << remainingQueued << " bytes remain in CATS queues, "
+                    << "awaiting TCP flow control or ACK events to resume feeding");
+    }
+    else
+    {
+        NS_LOG_INFO("CATS: Conductor finished - all priority queues empty, ready for new data");
+    }
 }
 
-std::queue<TcpCats::CatsDataItem*>&
+void
+TcpCats::ReceivedAck(Ptr<Packet> packet, const TcpHeader& tcpHeader)
+{
+    NS_LOG_FUNCTION(this << packet << tcpHeader);
+    
+    // First, let the base class process the ACK
+    TcpSocketBase::ReceivedAck(packet, tcpHeader);
+    
+    // After the base class has processed the ACK and potentially freed up buffer space,
+    // trigger our Conductor to continue feeding data if we have any queued
+    if (HasQueuedData())
+    {
+        uint32_t queuedBytes = GetTotalQueuedBytes();
+        NS_LOG_INFO("CATS: ACK freed base TCP buffer space (" << GetTxAvailable() << " bytes available). "
+                    << "Triggering Conductor to resume feeding " << queuedBytes << " bytes from priority queues");
+        ConductorFeedData();
+    }
+}
+
+std::queue<TcpCats::CatsTxItem>&
 TcpCats::GetPriorityQueue(uint8_t priority)
 {
     switch (priority)
@@ -220,6 +339,52 @@ TcpCats::HasQueuedData() const
            !m_txBufferPrio4.empty();
 }
 
+uint32_t
+TcpCats::GetTotalQueuedBytes() const
+{
+    uint32_t totalBytes = 0;
+    
+    // Count bytes in each priority queue
+    std::queue<CatsTxItem> tempQueue;
+    
+    // Priority 0
+    tempQueue = m_txBufferPrio0;
+    while (!tempQueue.empty()) {
+        totalBytes += tempQueue.front().packet->GetSize();
+        tempQueue.pop();
+    }
+    
+    // Priority 1
+    tempQueue = m_txBufferPrio1;
+    while (!tempQueue.empty()) {
+        totalBytes += tempQueue.front().packet->GetSize();
+        tempQueue.pop();
+    }
+    
+    // Priority 2
+    tempQueue = m_txBufferPrio2;
+    while (!tempQueue.empty()) {
+        totalBytes += tempQueue.front().packet->GetSize();
+        tempQueue.pop();
+    }
+    
+    // Priority 3
+    tempQueue = m_txBufferPrio3;
+    while (!tempQueue.empty()) {
+        totalBytes += tempQueue.front().packet->GetSize();
+        tempQueue.pop();
+    }
+    
+    // Priority 4
+    tempQueue = m_txBufferPrio4;
+    while (!tempQueue.empty()) {
+        totalBytes += tempQueue.front().packet->GetSize();
+        tempQueue.pop();
+    }
+    
+    return totalBytes;
+}
+
 uint8_t
 TcpCats::GetNextPriorityToServe()
 {
@@ -230,7 +395,7 @@ TcpCats::GetNextPriorityToServe()
     // Check each priority level from highest to lowest
     for (uint8_t priority = 0; priority <= 4; priority++)
     {
-        std::queue<CatsDataItem*>& queue = GetPriorityQueue(priority);
+        std::queue<CatsTxItem>& queue = GetPriorityQueue(priority);
         if (queue.empty())
         {
             continue;
@@ -239,7 +404,7 @@ TcpCats::GetNextPriorityToServe()
         // For priority 0, always serve immediately (highest priority)
         if (priority == 0)
         {
-            NS_LOG_INFO("CATS: Serving highest priority 0");
+            NS_LOG_INFO("CATS: Priority 0 (URGENT) gets immediate service - jumping queue!");
             return priority;
         }
         
@@ -247,8 +412,9 @@ TcpCats::GetNextPriorityToServe()
         Time timeSinceLastSent = now - m_lastSentTime[priority];
         if (timeSinceLastSent >= m_fairnessTimeout)
         {
-            NS_LOG_INFO("CATS: Serving priority " << (uint32_t)priority 
-                        << " due to fairness timeout (" << timeSinceLastSent.GetMilliSeconds() << "ms)");
+            NS_LOG_INFO("CATS: Fairness mechanism activating priority " << (uint32_t)priority 
+                        << " (waited " << timeSinceLastSent.GetMilliSeconds() << "ms >= " 
+                        << m_fairnessTimeout.GetMilliSeconds() << "ms timeout)");
             return priority;
         }
         
@@ -260,7 +426,7 @@ TcpCats::GetNextPriorityToServe()
         }
     }
     
-    NS_LOG_INFO("CATS: No priority queue ready to serve");
+    NS_LOG_INFO("CATS: All queues waiting for fairness timeout - no queue ready to serve");
     return 5; // No queue ready
 }
 
@@ -269,16 +435,12 @@ TcpCats::CleanupQueues()
 {
     NS_LOG_FUNCTION(this);
     
-    // Clean up all priority queues
-    for (uint8_t priority = 0; priority <= 4; priority++)
-    {
-        std::queue<CatsDataItem*>& queue = GetPriorityQueue(priority);
-        while (!queue.empty())
-        {
-            delete queue.front();
-            queue.pop();
-        }
-    }
+    // Clear all priority queues (std::queue automatically handles cleanup)
+    while (!m_txBufferPrio0.empty()) m_txBufferPrio0.pop();
+    while (!m_txBufferPrio1.empty()) m_txBufferPrio1.pop();
+    while (!m_txBufferPrio2.empty()) m_txBufferPrio2.pop();
+    while (!m_txBufferPrio3.empty()) m_txBufferPrio3.pop();
+    while (!m_txBufferPrio4.empty()) m_txBufferPrio4.pop();
 }
 
 } // namespace ns3
