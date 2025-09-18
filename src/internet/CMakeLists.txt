@@ -95,6 +95,8 @@ set(source_files
     model/tcp-hybla.cc
     model/tcp-illinois.cc
     model/tcp-l4-protocol.cc
+    model/tcp-cats.cc
+    model/priority-tag.cc
     model/tcp-ledbat.cc
     model/tcp-linux-reno.cc
     model/tcp-lp.cc
@@ -104,6 +106,7 @@ set(source_files
     model/tcp-option-ts.cc
     model/tcp-option-winscale.cc
     model/tcp-option.cc
+    model/tcp-option-cats-priority.cc
     model/tcp-prr-recovery.cc
     model/tcp-rate-ops.cc
     model/tcp-recovery-ops.cc
@@ -220,6 +223,8 @@ set(header_files
     model/tcp-hybla.h
     model/tcp-illinois.h
     model/tcp-l4-protocol.h
+    model/tcp-cats.h
+    model/priority-tag.h
     model/tcp-ledbat.h
     model/tcp-linux-reno.h
     model/tcp-lp.h
@@ -229,6 +234,7 @@ set(header_files
     model/tcp-option-ts.h
     model/tcp-option-winscale.h
     model/tcp-option.h
+    model/tcp-option-cats-priority.h
     model/tcp-prr-recovery.h
     model/tcp-rate-ops.h
     model/tcp-recovery-ops.h

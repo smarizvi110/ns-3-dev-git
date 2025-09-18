@@ -31,6 +31,8 @@
 #include "tcp-option-sack.h"
 #include "tcp-option-ts.h"
 #include "tcp-option-winscale.h"
+#include "tcp-option-cats-priority.h"
+#include "priority-tag.h"
 #include "tcp-rate-ops.h"
 #include "tcp-recovery-ops.h"
 #include "tcp-rx-buffer.h"
@@ -3268,7 +3270,7 @@ TcpSocketBase::SendDataPacket(SequenceNumber32 seq, uint32_t maxSize, bool withA
         header.SetDestinationPort(m_endPoint6->GetPeerPort());
     }
     header.SetWindowSize(AdvertisedWindowSize());
-    AddOptions(header);
+    AddOptions(header, p);
 
     if (m_retxEvent.IsExpired())
     {
@@ -4322,6 +4324,61 @@ TcpSocketBase::AddOptions(TcpHeader& header)
     if (m_timestampEnabled)
     {
         AddOptionTimestamp(header);
+    }
+}
+
+void
+TcpSocketBase::AddOptions(TcpHeader& header, Ptr<Packet> packet)
+{
+    NS_LOG_FUNCTION(this << header << packet);
+    NS_LOG_INFO("TcpSocketBase::AddOptions WITH PACKET called!");
+
+    // First, add standard TCP options
+    if (m_timestampEnabled)
+    {
+        AddOptionTimestamp(header);
+    }
+
+    // Check for CATS priority tag and add TCP Option Kind 253 if present
+    if (packet)
+    {
+        NS_LOG_INFO("TcpSocketBase: Checking packet for priority tags...");
+        PriorityTag priorityTag;
+        bool foundTag = false;
+        uint8_t priority = 2;
+        
+        // First try packet tag
+        if (packet->PeekPacketTag(priorityTag))
+        {
+            priority = priorityTag.GetPriority();
+            foundTag = true;
+            NS_LOG_INFO("TcpSocketBase: Found CATS priority packet tag with priority " << (uint32_t)priority);
+        }
+        // Then try byte tag
+        else if (packet->FindFirstMatchingByteTag(priorityTag))
+        {
+            priority = priorityTag.GetPriority();
+            foundTag = true;
+            NS_LOG_INFO("TcpSocketBase: Found CATS priority byte tag with priority " << (uint32_t)priority);
+        }
+        else
+        {
+            NS_LOG_INFO("TcpSocketBase: No priority tags found in packet");
+        }
+        
+        if (foundTag)
+        {
+            // Create and add CATS priority TCP option
+            Ptr<TcpOptionCatsPriority> catsOption = CreateObject<TcpOptionCatsPriority>();
+            catsOption->SetPriority(priority);
+            header.AppendOption(catsOption);
+            
+            NS_LOG_INFO("TcpSocketBase: Added CATS TCP Option Kind 253 with priority " << (uint32_t)priority);
+        }
+    }
+    else
+    {
+        NS_LOG_INFO("TcpSocketBase: No packet provided to AddOptions");
     }
 }
 

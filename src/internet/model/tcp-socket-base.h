@@ -1189,6 +1189,17 @@ class TcpSocketBase : public TcpSocket
     void AddOptions(TcpHeader& tcpHeader);
 
     /**
+     * @brief Add options to TcpHeader, including CATS priority if present
+     *
+     * Test each option, and if it is enabled on our side, add it
+     * to the header. Also checks packet for CATS priority tags.
+     *
+     * @param tcpHeader TcpHeader to add options to
+     * @param packet Packet to check for priority tags
+     */
+    void AddOptions(TcpHeader& tcpHeader, Ptr<Packet> packet);
+
+    /**
      * @brief Read TCP options before Ack processing
      *
      * Timestamp and Window scale are managed in other pieces of code.

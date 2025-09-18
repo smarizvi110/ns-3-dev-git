@@ -86,6 +86,7 @@ TcpOption::IsKindKnown(uint8_t kind)
     case SACKPERMITTED:
     case SACK:
     case TS:
+    case 253:  // CATS priority option
         // Do not add UNKNOWN here
         return true;
     }
