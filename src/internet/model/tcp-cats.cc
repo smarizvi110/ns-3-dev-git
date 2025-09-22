@@ -143,7 +143,15 @@ TcpCats::Send(Ptr<Packet> p, uint32_t flags)
     // Add to appropriate priority queue
     CatsTxItem item(packetCopy);
     std::queue<CatsTxItem>& queue = GetPriorityQueue(priority);
+    
+    // Check if this is the first data arriving after all queues were empty
+    bool wasCompletelyEmpty = !HasQueuedData();
     queue.push(item);
+    
+    if (wasCompletelyEmpty)
+    {
+        NS_LOG_INFO("CATS: 🔄 INTERCEPTOR RESTART: First data arrival after complete queue emptying");
+    }
     
     NS_LOG_INFO("CATS: Interceptor accepted " << packetSize << " bytes with priority " << (uint32_t)priority 
                 << " (base TCP buffer available: " << GetTxAvailable() << " bytes, total queued data in CATS: " 
@@ -195,6 +203,26 @@ TcpCats::ConductorFeedData()
     }
     
     uint32_t totalQueued = GetTotalQueuedBytes();
+    
+    // Enhanced logging for restart scenarios
+    static bool wasEmpty = true;  // Track if queues were empty before
+    if (totalQueued == 0 && !wasEmpty)
+    {
+        NS_LOG_INFO("CATS: 🛑 All priority queues now empty - Feeder going idle");
+        wasEmpty = true;
+        return;
+    }
+    else if (totalQueued > 0 && wasEmpty)
+    {
+        NS_LOG_INFO("CATS: 🔄 RESTART: Feeder restarting from empty state with " << totalQueued << " bytes to feed");
+        wasEmpty = false;
+    }
+    else if (totalQueued == 0)
+    {
+        // Already empty, stay idle
+        return;
+    }
+    
     NS_LOG_INFO("CATS: Conductor starting - " << totalQueued << " bytes in priority queues, "
                 << GetTxAvailable() << " bytes available in base TCP buffer");
     
