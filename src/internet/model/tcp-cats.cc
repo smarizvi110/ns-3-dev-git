@@ -119,16 +119,16 @@ TcpCats::Send(Ptr<Packet> p, uint32_t flags)
     if (p->PeekPacketTag(priorityTag))
     {
         priority = priorityTag.GetPriority();
-        NS_LOG_INFO("CATS: Found priority tag with priority " << (uint32_t)priority);
+        NS_LOG_DEBUG("CATS: Found priority tag with priority " << (uint32_t)priority);
     }
     else if (p->FindFirstMatchingByteTag(priorityTag))
     {
         priority = priorityTag.GetPriority();
-        NS_LOG_INFO("CATS: Found priority byte tag with priority " << (uint32_t)priority);
+        NS_LOG_DEBUG("CATS: Found priority byte tag with priority " << (uint32_t)priority);
     }
     else
     {
-        NS_LOG_INFO("CATS: No priority tag found, using default priority " << (uint32_t)priority);
+        NS_LOG_DEBUG("CATS: No priority tag found, using default priority " << (uint32_t)priority);
     }
     
     // Clamp priority to valid range
@@ -150,7 +150,7 @@ TcpCats::Send(Ptr<Packet> p, uint32_t flags)
     
     if (wasCompletelyEmpty)
     {
-        NS_LOG_INFO("CATS: 🔄 INTERCEPTOR RESTART: First data arrival after complete queue emptying");
+        NS_LOG_WARN("CATS: 🔄 INTERCEPTOR RESTART: First data arrival after complete queue emptying");
     }
     
     NS_LOG_INFO("CATS: Interceptor accepted " << packetSize << " bytes with priority " << (uint32_t)priority 
@@ -208,13 +208,13 @@ TcpCats::ConductorFeedData()
     static bool wasEmpty = true;  // Track if queues were empty before
     if (totalQueued == 0 && !wasEmpty)
     {
-        NS_LOG_INFO("CATS: 🛑 All priority queues now empty - Feeder going idle");
+        NS_LOG_WARN("CATS: 🛑 All priority queues now empty - Feeder going idle");
         wasEmpty = true;
         return;
     }
     else if (totalQueued > 0 && wasEmpty)
     {
-        NS_LOG_INFO("CATS: 🔄 RESTART: Feeder restarting from empty state with " << totalQueued << " bytes to feed");
+        NS_LOG_WARN("CATS: 🔄 RESTART: Feeder restarting from empty state with " << totalQueued << " bytes to feed");
         wasEmpty = false;
     }
     else if (totalQueued == 0)
@@ -223,7 +223,7 @@ TcpCats::ConductorFeedData()
         return;
     }
     
-    NS_LOG_INFO("CATS: Conductor starting - " << totalQueued << " bytes in priority queues, "
+    NS_LOG_DEBUG("CATS: Conductor starting - " << totalQueued << " bytes in priority queues, "
                 << GetTxAvailable() << " bytes available in base TCP buffer");
     
     // Continue feeding the base class buffer as long as:
@@ -243,7 +243,7 @@ TcpCats::ConductorFeedData()
         uint8_t selectedPriority = GetNextPriorityToServe();
         if (selectedPriority > 4)
         {
-            NS_LOG_INFO("CATS: No eligible priority queue found");
+            NS_LOG_DEBUG("CATS: No eligible priority queue found");
             break;
         }
         
@@ -272,15 +272,25 @@ TcpCats::ConductorFeedData()
             
             // Copy priority tag from original packet to the new small packet
             PriorityTag priorityTag;
+            PriorityTag existingTag;
+            
             if (largePacket->PeekPacketTag(priorityTag))
             {
-                newSmallPacket->AddPacketTag(priorityTag);
-                NS_LOG_INFO("CATS: Copied priority tag " << (uint32_t)priorityTag.GetPriority() << " to segment");
+                // Check if the new packet already has a priority tag (from CreateFragment)
+                if (!newSmallPacket->PeekPacketTag(existingTag))
+                {
+                    newSmallPacket->AddPacketTag(priorityTag);
+                    NS_LOG_LOGIC("CATS: Copied priority tag " << (uint32_t)priorityTag.GetPriority() << " to segment");
+                }
             }
             else if (largePacket->FindFirstMatchingByteTag(priorityTag))
             {
-                newSmallPacket->AddByteTag(priorityTag);
-                NS_LOG_INFO("CATS: Copied priority byte tag " << (uint32_t)priorityTag.GetPriority() << " to segment");
+                // Check if the new packet already has a priority byte tag
+                if (!newSmallPacket->FindFirstMatchingByteTag(existingTag))
+                {
+                    newSmallPacket->AddByteTag(priorityTag);
+                    NS_LOG_LOGIC("CATS: Copied priority byte tag " << (uint32_t)priorityTag.GetPriority() << " to segment");
+                }
             }
         }
         
@@ -289,12 +299,12 @@ TcpCats::ConductorFeedData()
         
         if (sentBytes <= 0)
         {
-            NS_LOG_INFO("CATS: Conductor paused - base TCP temporarily cannot accept more data. "
+            NS_LOG_DEBUG("CATS: Conductor paused - base TCP temporarily cannot accept more data. "
                         << GetTotalQueuedBytes() << " bytes remain in CATS queues");
             break;
         }
         
-        NS_LOG_INFO("CATS: Feeder delivered " << sentBytes << " bytes from priority " << (uint32_t)selectedPriority 
+        NS_LOG_DEBUG("CATS: Feeder delivered " << sentBytes << " bytes from priority " << (uint32_t)selectedPriority 
                     << " to base TCP (base buffer available: " << GetTxAvailable() 
                     << ", CATS queue remaining: " << GetTotalQueuedBytes() << " bytes)");
         
@@ -308,19 +318,19 @@ TcpCats::ConductorFeedData()
         if (largePacket->GetSize() == 0)
         {
             selectedQueue.pop();
-            NS_LOG_INFO("CATS: Priority " << (uint32_t)selectedPriority << " packet fully transmitted");
+            NS_LOG_DEBUG("CATS: Priority " << (uint32_t)selectedPriority << " packet fully transmitted");
         }
     }
     
     uint32_t remainingQueued = GetTotalQueuedBytes();
     if (remainingQueued > 0)
     {
-        NS_LOG_INFO("CATS: Conductor finished - " << remainingQueued << " bytes remain in CATS queues, "
+        NS_LOG_DEBUG("CATS: Conductor finished - " << remainingQueued << " bytes remain in CATS queues, "
                     << "awaiting TCP flow control or ACK events to resume feeding");
     }
     else
     {
-        NS_LOG_INFO("CATS: Conductor finished - all priority queues empty, ready for new data");
+        NS_LOG_DEBUG("CATS: Conductor finished - all priority queues empty, ready for new data");
     }
 }
 
@@ -337,7 +347,7 @@ TcpCats::ReceivedAck(Ptr<Packet> packet, const TcpHeader& tcpHeader)
     if (HasQueuedData())
     {
         uint32_t queuedBytes = GetTotalQueuedBytes();
-        NS_LOG_INFO("CATS: ACK freed base TCP buffer space (" << GetTxAvailable() << " bytes available). "
+        NS_LOG_DEBUG("CATS: ACK freed base TCP buffer space (" << GetTxAvailable() << " bytes available). "
                     << "Triggering Conductor to resume feeding " << queuedBytes << " bytes from priority queues");
         ConductorFeedData();
     }
@@ -440,7 +450,7 @@ TcpCats::GetNextPriorityToServe()
         Time timeSinceLastSent = now - m_lastSentTime[priority];
         if (timeSinceLastSent >= m_fairnessTimeout)
         {
-            NS_LOG_INFO("CATS: Fairness mechanism activating priority " << (uint32_t)priority 
+            NS_LOG_DEBUG("CATS: Fairness mechanism activating priority " << (uint32_t)priority 
                         << " (waited " << timeSinceLastSent.GetMilliSeconds() << "ms >= " 
                         << m_fairnessTimeout.GetMilliSeconds() << "ms timeout)");
             return priority;
@@ -454,7 +464,7 @@ TcpCats::GetNextPriorityToServe()
         }
     }
     
-    NS_LOG_INFO("CATS: All queues waiting for fairness timeout - no queue ready to serve");
+    NS_LOG_DEBUG("CATS: All queues waiting for fairness timeout - no queue ready to serve");
     return 5; // No queue ready
 }
 
