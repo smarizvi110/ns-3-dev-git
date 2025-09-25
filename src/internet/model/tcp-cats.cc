@@ -16,23 +16,7 @@
  * \brief CATS (Custody Assisted Traffic Switching) TCP Socket Implementation
  * 
  * This implementation provides priority-based packet queuing with sophisticated
- * fairness mechanisms for ns-3 TCP sockets. Key algorithmic improvements include:
- * 
- * ## Version History & Breakthrough Fixes
- * 
- * **Original Issue**: Priority queuing not working - only 18/1000+ packets transmitted,
- * PCAP analysis showed sequential transmission without priority jumping.
- * 
- * **Critical Fix #1 - Segment-by-Segment Feeding**: Changed ConductorFeedData from
- * while-loop (drain entire queues) to if-statement (one segment per call). This 
- * enabled continuous priority re-evaluation and true queue jumping behavior.
- * 
- * **Critical Fix #2 - Debt Redistribution**: Implemented proportional debt redistribution
- * to resolve fairness deadlocks when all non-empty queues exceed debt watermarks.
- * This prevented 96KB+ of data from remaining stuck in queues indefinitely.
- * 
- * **Result**: Transmission success improved from 18 packets (1.8%) to 75 packets (98.7%),
- * a 4.2x improvement with proper priority jumping behavior validated in PCAP analysis.
+ * fairness mechanisms for ns-3 TCP sockets.
  * 
  * ## Architecture: "Interceptor and Feeder"
  * - **INTERCEPTOR**: Send() method routes app data to priority queues (P0-P4)
@@ -43,7 +27,7 @@
  * - Debt tracking prevents priority starvation
  * - Configurable watermarks with hysteresis control
  * - Proportional payback multipliers maintain priority ordering
- * - Deadlock resolution ensures forward progress
+ * - Debt redistribution ensures continuous operation
  */
 
 #include "tcp-cats.h"
@@ -356,18 +340,12 @@ TcpCats::SendWithPriority(Ptr<Packet> packet, uint8_t priority)
  * 
  * This is the core method of the CATS "Interceptor and Feeder" architecture.
  * It feeds data from priority queues to the base TCP layer in a controlled manner
- * that enables true priority jumping behavior.
+ * that enables priority jumping behavior.
  * 
- * ## Critical Design Decision: Segment-by-Segment Feeding
- * Uses if-statement (not while-loop) to feed only ONE segment per call.
- * This was the breakthrough fix that enabled proper CATS behavior:
- * 
- * **Before (while-loop)**: Conductor would drain entire queues, preventing
- * higher priority traffic from interrupting ongoing transmissions.
- * 
- * **After (if-statement)**: Conductor feeds one segment, then allows priority
- * re-evaluation, enabling true queue jumping where P0 URGENT can interrupt
- * ongoing P3 bulk transmission.
+ * ## Segment-by-Segment Feeding Design
+ * Uses if-statement to feed only ONE segment per call, enabling continuous priority
+ * re-evaluation after each segment transmission. This allows higher priority traffic
+ * to interrupt ongoing lower priority transmissions.
  * 
  * ## Flow Control Integration
  * - Checks GetTxAvailable() to respect TCP window limits
@@ -376,7 +354,7 @@ TcpCats::SendWithPriority(Ptr<Packet> packet, uint8_t priority)
  * 
  * ## Fairness Integration
  * - Calls UpdateFairnessState() after each successful transmission
- * - Handles debt redistribution when deadlocks are detected
+ * - Handles debt redistribution when needed for continuous operation
  * - Preserves priority ordering through credit-based fairness
  * 
  * This method is automatically triggered after ACK reception to maintain
@@ -644,7 +622,7 @@ TcpCats::GetTotalQueuedBytes() const
 }
 
 /**
- * \brief Priority selection algorithm with fairness integration and deadlock resolution
+ * \brief Priority selection algorithm with fairness integration and debt management
  * 
  * This method implements the core CATS priority scheduling algorithm that balances
  * strict priority ordering with fairness mechanisms to prevent starvation.
@@ -652,11 +630,11 @@ TcpCats::GetTotalQueuedBytes() const
  * ## Algorithm Steps
  * 1. **Priority Scanning**: Examines queues from P0 (URGENT) to P4 (Background)
  * 2. **Data Check**: Only considers queues that have pending packets
- * 3. **Eligibility Check**: Skips queues in debt state (exceeded high watermarks)
+ * 3. **Eligibility Check**: Skips queues in debt state (P0 can override)
  * 4. **Selection**: Returns first eligible queue with data
- * 5. **Deadlock Detection**: If all non-empty queues are in debt state
- * 6. **Deadlock Resolution**: Triggers proportional debt redistribution
- * 7. **Retry**: After redistribution, re-scans for eligible queues
+ * 5. **Debt Management**: If all non-empty queues in debt: trigger redistribution
+ * 6. **Retry**: After redistribution, re-scans for eligible queues
+ * 7. **Return**: First eligible queue or 5 if none available
  * 
  * ## Priority Override for Critical Traffic
  * P0 (URGENT) can be served even when in debt state, ensuring critical
@@ -669,8 +647,7 @@ TcpCats::GetTotalQueuedBytes() const
  * - Lower priorities pay down debt when they get transmission opportunities
  * - Hysteresis (separate low watermark) prevents rapid state oscillation
  * 
- * This method enabled the breakthrough from 18 packets (original) to 75 packets
- * (enhanced) by properly resolving fairness deadlocks while maintaining priority ordering.
+ * This algorithm ensures efficient priority-based scheduling with continuous operation.
  */
 uint8_t
 TcpCats::GetNextPriorityToServe()
@@ -801,35 +778,31 @@ TcpCats::UpdateFairnessState(uint8_t priority, uint32_t bytesSent)
 }
 
 /**
- * \brief Performs proportional debt redistribution to resolve fairness deadlocks
+ * \brief Performs proportional debt redistribution for continuous system operation
  * 
- * This method is a critical component of the CATS fairness system that prevents
- * transmission deadlocks when all non-empty queues have exceeded their debt 
- * watermarks and entered debt state.
- * 
- * ## Deadlock Scenario
- * Without this mechanism, if all queues with data are in debt state, no queue
- * would be eligible for transmission, causing a deadlock where ~96KB+ of data
- * could remain stuck in queues indefinitely.
+ * This method is a critical component of the CATS fairness system that ensures
+ * continuous operation when multiple priorities have exceeded their debt watermarks
+ * and would otherwise be ineligible for transmission.
  * 
  * ## Algorithm Details
  * 1. Calculate total system payback multiplier (sum of ALL P0-P4 multipliers)
- * 2. For each priority, compute reduction factor = multiplier / total
- * 3. Reduce debt by: new_debt = old_debt * (1 - reduction_factor)
- * 4. Update debt state flags based on new debt levels vs watermarks
+ * 2. For each priority with non-empty queues and debt > 0:
+ *    - Compute proportional factor = multiplier / total
+ *    - Reduce debt by: new_debt = old_debt * proportional_factor
+ * 3. Update debt state flags based on new debt levels vs watermarks
  * 
  * ## Proportional Fairness
- * Higher priorities have lower payback multipliers, so they:
- * - Get smaller debt reductions (retain more debt)
- * - Are more likely to remain in debt state after redistribution
- * - Maintain relative priority ordering even during deadlock resolution
+ * Higher priorities have lower payback multipliers. Among non-empty queues with debt:
+ * - Get smaller proportional factors (more aggressive debt reduction)
+ * - Are more likely to exit debt state after redistribution
+ * - Maintain relative priority ordering during redistribution
  * 
  * ## Example with Default Multipliers (0.25,0.5,1.0,1.5,2.0, sum=5.25)
- * - P0 debt: 6144 → 6144*(1-0.25/5.25) = 5861 bytes (retains 95.2%)
- * - P3 debt: 6144 → 6144*(1-1.5/5.25) = 4389 bytes (retains 71.4%)
+ * If P0 and P3 both have 6144 bytes debt and non-empty queues:
+ * - P0 debt: 6144 → 6144*(0.25/5.25) = 293 bytes (reduced by 95.2%)
+ * - P3 debt: 6144 → 6144*(1.5/5.25) = 1755 bytes (reduced by 71.4%)
  * 
- * This breakthrough resolved the fundamental fairness deadlock issue that was
- * blocking 96% of data transmission in earlier versions.
+ * This maintains continuous system operation while preserving priority relationships.
  */
 void
 TcpCats::PerformDebtRedistribution()

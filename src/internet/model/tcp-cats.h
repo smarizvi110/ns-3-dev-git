@@ -6,7 +6,14 @@
  * published by the Free Software Foundation;
  *
  * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * b     * This method is called when all non-empty queues are in debt state,
+     * which would normally prevent transmission. The redistribution
+     * uses proportional payback multipliers to reduce debts simultaneously
+     * for all priorities that have both non-empty queues and debt > 0:
+     * 
+     * For each priority i with non-empty queue and debt > 0: 
+     *   reduction_factor = payback_multiplier[i] / sum_of_all_multipliers
+     *   new_debt[i] = old_debt[i] * reduction_factorOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
@@ -72,7 +79,7 @@ namespace ns3
  * that determine how quickly debt is reduced when lower priorities send data.
  * Higher priorities have lower multipliers (pay back debt slower).
  * 
- * **Deadlock Resolution**: When all non-empty queues are in debt state,
+ * **Continuous Operation**: When all non-empty queues are in debt state,
  * the system performs proportional debt redistribution using system-wide
  * payback multiplier totals to ensure forward progress.
  * 
@@ -161,7 +168,7 @@ protected:
      *   interrupt ongoing lower priority transmission
      * - Integrates with TCP flow control via GetTxAvailable()
      * - Updates fairness state after each successful transmission
-     * - Handles debt redistribution when deadlocks occur
+     * - Handles debt redistribution for continuous operation
      * 
      * Called automatically after ACK reception to maintain transmission flow.
      */
@@ -257,7 +264,7 @@ private:
      * 1. **Priority Scanning**: Examines queues from P0 (highest) to P4 (lowest)
      * 2. **Eligibility Check**: Queues in debt state are ineligible for transmission
      * 3. **Data Availability**: Only considers queues that have pending data
-     * 4. **Deadlock Detection**: If all non-empty queues are in debt state,
+     * 4. **Debt Management**: If all non-empty queues are in debt state,
      *    triggers debt redistribution to ensure forward progress
      * 5. **P0 Override**: Priority 0 (URGENT) can be served even in debt state
      *    for critical traffic handling
@@ -285,23 +292,24 @@ private:
     void UpdateFairnessState(uint8_t priority, uint32_t bytesSent);
     
     /**
-     * \brief Perform proportional debt redistribution to resolve deadlocks
+     * \brief Perform proportional debt redistribution for continuous operation
      * 
      * This method is called when all non-empty queues are in debt state,
-     * which would normally cause a transmission deadlock. The redistribution
+     * which would normally prevent transmission. The redistribution
      * uses proportional payback multipliers to reduce all debts simultaneously:
      * 
      * For each priority i: 
-     *   reduction_factor = payback_multiplier[i] / sum_of_all_multipliers
-     *   new_debt[i] = old_debt[i] * (1 - reduction_factor)
+     *   proportional_factor = payback_multiplier[i] / sum_of_all_multipliers
+     *   new_debt[i] = old_debt[i] * proportional_factor
      * 
-     * This ensures that higher priorities (lower multipliers) retain more debt
-     * and are more likely to remain in debt state, preserving priority ordering
-     * while resolving deadlocks.
+     * This ensures that higher priorities (lower multipliers) get more aggressive
+     * debt reduction and are more likely to exit debt state, preserving priority ordering
+     * while ensuring continuous operation.
      * 
      * Example with default multipliers (0.25,0.5,1.0,1.5,2.0, sum=5.25):
-     * - P0 debt reduced by factor 0.25/5.25 = 4.8% (retains 95.2%)
-     * - P3 debt reduced by factor 1.5/5.25 = 28.6% (retains 71.4%)
+     * If P0 and P3 both have non-empty queues with 6144 bytes debt:
+     * - P0: new debt = 6144 * (0.25/5.25) = 293 bytes (95.2% reduction)
+     * - P3: new debt = 6144 * (1.5/5.25) = 1755 bytes (71.4% reduction)
      * 
      * This maintains relative fairness while ensuring forward progress.
      */
