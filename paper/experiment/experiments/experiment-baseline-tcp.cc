@@ -838,6 +838,16 @@ int main(int argc, char* argv[])
         g_parameterDebugFile << "Timestamp: " << std::time(nullptr) << std::endl;
         g_parameterDebugFile << std::endl;
 
+        g_parameterDebugFile << "Resolved run settings:" << std::endl;
+        g_parameterDebugFile << "  simTime: " << simTime << "s" << std::endl;
+        g_parameterDebugFile << "  bottleneckBw: " << bottleneckBw << std::endl;
+        g_parameterDebugFile << "  bottleneckDelay: " << bottleneckDelay << std::endl;
+        g_parameterDebugFile << "  accessBw: " << accessBw << std::endl;
+        g_parameterDebugFile << "  accessDelay: " << accessDelay << std::endl;
+        g_parameterDebugFile << "  outputDir: " << finalOutputDir << std::endl;
+        g_parameterDebugFile << "  enablePcap: " << (enablePcap ? "true" : "false") << std::endl;
+        g_parameterDebugFile << std::endl;
+
         // Log command line arguments to show which parameters were set
         g_parameterDebugFile << "🔧 Command line arguments used:" << std::endl;
         for (int i = 1; i < argc; i++) {
@@ -945,14 +955,15 @@ int main(int argc, char* argv[])
     Simulator::Destroy();
 
     // Close all trace files
+    const bool hadParameterDebugLog = g_parameterDebugFile.is_open();
     g_priorityCompletionFile.close();
-    if (g_parameterDebugFile.is_open()) g_parameterDebugFile.close();
+    if (hadParameterDebugLog) g_parameterDebugFile.close();
 
     NS_LOG_INFO("Simulation completed successfully");
     NS_LOG_INFO("Output directory: " << finalOutputDir);
     NS_LOG_INFO("Output files:");
     NS_LOG_INFO("  Priority completion: " << priorityCompletionFile);
-    if (g_parameterDebugFile.is_open()) NS_LOG_INFO("  Parameter debug: " << parameterDebugFile);
+    if (hadParameterDebugLog) NS_LOG_INFO("  Parameter debug: " << parameterDebugFile);
     if (enablePcap) NS_LOG_INFO("  PCAP files: " << finalOutputDir << "/experiment-baseline-tcp-*.pcap");
     NS_LOG_INFO("");
     NS_LOG_INFO("=== BASELINE TCP EXPERIMENT COMPLETE ===");

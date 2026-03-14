@@ -67,6 +67,33 @@ For each variant output directory (`results/cats/` and `results/baseline/`):
 - `priority_completion.tsv`: priority-group completion events used for plots.
 - `parameter_debug.log`: run-time parameter/configuration trace (transport setup, selected options, and debug notes emitted by the scenario code).
 
+### Understanding `parameter_debug.log`
+
+These logs are intentionally kept as a lightweight audit trail for each run.
+
+Why they are there:
+
+- Record resolved run settings (network/link parameters, output path, and PCAP on/off).
+- Provide a quick sanity check that CATS and baseline were launched with the expected options.
+- Help explain outliers in `priority_completion.tsv` without immediately re-running full simulations.
+
+What they typically show:
+
+- Header metadata (`Experiment`, `Timestamp`, and full command-line arguments).
+- Resolved run settings (`simTime`, link rates/delays, output directory, and `enablePcap`).
+- Transport setup checkpoints from scenario code (BBR/PRR/RTT setup and CATS socket registration events).
+- In CATS runs, a parameter reference block listing CATS tunables and their defaults.
+
+How to use them:
+
+- Compare `results/cats/parameter_debug.log` and `results/baseline/parameter_debug.log` first when results look unexpected.
+- Confirm run settings match what you intended before trusting plots.
+- Correlate log events with `priority_completion.tsv` and, when enabled, PCAP traces.
+
+Scope note: the CATS parameter list in the log is a reference of defaults/available knobs unless you explicitly pass overrides in the run command.
+
+Important: these are diagnostic traces, not the primary paper metric. The metric of record remains `priority_completion.tsv`.
+
 ### PCAP Files: Where They Go and Why You May Not See Them
 
 The experiment sources support PCAP generation, but the current paper runner uses explicit `--outputDir=...` and does not pass `--enablePcap=true`.
@@ -164,4 +191,4 @@ The experiment variants now emit only priority-group completion metrics in TSV f
 SimTime(s)    PageID    Priority    CompletionTime(ms)    Event
 ```
 
-This is the sole metric input used by the paper plots.
+This is the metric input used by the paper plots.
