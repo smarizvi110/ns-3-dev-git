@@ -1,3 +1,29 @@
+# CATS: Conductor-driven Asymmetric Transport Scheme (ns-3 Implementation)
+
+> **⚠️ RESEARCH ARTIFACT NOTICE:**
+> This repository is a fork of ns-3 containing the official C++ implementation and reproducible experiment artifacts for the paper:
+> **"A Case for CATS: A Conductor-driven Asymmetric Transport Scheme for Semantic Prioritization"** (ICIC 2025).
+>
+> * **[📄 IEEE Xplore Article](https://ieeexplore.ieee.org/document/11413235)**
+> * **[🔓 arXiv Preprint (Coming Soon)](https://arxiv.org/abs/XXXX.XXXXX)**
+> * **[🏠 Project Hub](https://github.com/smarizvi110/CATS)**
+
+## Where to find the CATS modifications
+
+We have implemented CATS via an "Interceptor and Feeder" architecture directly into the ns-3 TCP internals. The core modifications can be found here:
+
+* `src/internet/model/tcp-cats.cc` and `.h` (The Conductor logic)
+* `src/internet/model/tcp-option-cats-priority.cc` and `.h` (TCP Option Kind 253)
+* Modifications to `src/internet/model/tcp-socket-base.cc`
+
+## How to reproduce the experiments
+
+All simulation scripts, plotting scripts, and TSV data outputs used in the paper are isolated in a dedicated directory.
+👉 **[Click here to view the Experiment README and run the simulations](paper/experiment/README.md)**
+
+---
+*(Original ns-3 README continues below)*
+
 # The Network Simulator, Version 3
 
 [![codecov](https://codecov.io/gh/nsnam/ns-3-dev-git/branch/master/graph/badge.svg)](https://codecov.io/gh/nsnam/ns-3-dev-git/branch/master/)
@@ -13,18 +39,26 @@ See the LICENSE file for more details.
 
 ## Table of Contents
 
-* [Overview](#overview-an-open-source-project)
-* [Software overview](#software-overview)
-* [Getting ns-3](#getting-ns-3)
-* [Building ns-3](#building-ns-3)
-* [Testing ns-3](#testing-ns-3)
-* [Running ns-3](#running-ns-3)
-* [ns-3 Documentation](#ns-3-documentation)
-* [Working with the Development Version of ns-3](#working-with-the-development-version-of-ns-3)
-* [Contributing to ns-3](#contributing-to-ns-3)
-* [Reporting Issues](#reporting-issues)
-* [Asking Questions](#asking-questions)
-* [ns-3 App Store](#ns-3-app-store)
+- [CATS: Conductor-driven Asymmetric Transport Scheme (ns-3 Implementation)](#cats-conductor-driven-asymmetric-transport-scheme-ns-3-implementation)
+  - [Where to find the CATS modifications](#where-to-find-the-cats-modifications)
+  - [How to reproduce the experiments](#how-to-reproduce-the-experiments)
+- [The Network Simulator, Version 3](#the-network-simulator-version-3)
+  - [License](#license)
+  - [Table of Contents](#table-of-contents)
+  - [Overview: An Open Source Project](#overview-an-open-source-project)
+  - [Software overview](#software-overview)
+  - [Getting ns-3](#getting-ns-3)
+  - [Building ns-3](#building-ns-3)
+    - [Supported Platforms](#supported-platforms)
+  - [Testing ns-3](#testing-ns-3)
+  - [Running ns-3](#running-ns-3)
+  - [Running ns-3 from Python](#running-ns-3-from-python)
+  - [ns-3 Documentation](#ns-3-documentation)
+  - [Working with the Development Version of ns-3](#working-with-the-development-version-of-ns-3)
+  - [Contributing to ns-3](#contributing-to-ns-3)
+  - [Reporting Issues](#reporting-issues)
+  - [Asking Questions](#asking-questions)
+  - [ns-3 App Store](#ns-3-app-store)
 
 > **NOTE**: Much more substantial information about ns-3 can be found at
 <https://www.nsnam.org>
