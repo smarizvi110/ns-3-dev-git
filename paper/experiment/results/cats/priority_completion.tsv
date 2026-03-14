@@ -1,0 +1,47 @@
+# CATS Priority Group Completion Analysis
+# ================================================================
+#
+# This experiment demonstrates CATS queue jumping by sending
+# priority groups in REVERSE order (P4 first, P0 last).
+# CATS should reorder delivery so P0, P1 arrive first, then P2, P3, and P4 last, while respecting fairness.
+#
+# SENDING ORDER (worst-case for baseline TCP):
+# 1st: P4 Analytics/Tracking (150KB) - LARGEST, lowest priority
+# 2nd: P3 Images/Media (60KB) - large
+# 3rd: P2 Application JS (40KB) - medium
+# 4th: P1 CSS Framework (25KB) - small
+# 5th: P0 Critical HTML/CSS (8KB) - SMALLEST, highest priority
+#
+# EXPECTED CATS DELIVERY ORDER:
+# P0, P1 complete first despite being sent last
+# P2, P3 complete in priority order
+# P4 completes last despite being sent first
+#
+# This demonstrates CATS's core value proposition:
+# Critical content gets priority regardless of send order
+# ================================================================
+#
+# TSV FILE FORMAT AND INTERPRETATION GUIDE:
+# ===========================================
+#
+# Columns:
+# 1. SimTime(s)        - Absolute simulation time when group completed
+# 2. PageID           - Page identifier (always 0 in single-page experiment)
+# 3. Priority         - CATS priority level (0=highest, 4=lowest)
+# 4. CompletionTime(ms) - Relative completion time from first byte received
+# 5. Event            - Always 'GROUP_COMPLETED' for this experiment
+#
+# HOW TO INTERPRET THE RESULTS:
+# - Lower CompletionTime(ms) = Faster delivery
+# - Priority 0 should have lowest CompletionTime (fastest)
+# - Priority 4 should have highest CompletionTime (slowest)
+# - CATS Success: P0 < P1 < P2 < P3 < P4 completion times
+# - TCP Without CATS: P4 < P3 < P2 < P1 < P0 (send order)
+#
+# ================================================================
+# Format: SimTime(s)	PageID	Priority	CompletionTime(ms)	Event
+1.317077	0	0	130.000000	GROUP_COMPLETED
+1.468696	0	1	282.000000	GROUP_COMPLETED
+1.709920	0	2	523.000000	GROUP_COMPLETED
+2.001928	0	3	815.000000	GROUP_COMPLETED
+2.514000	0	4	1327.000000	GROUP_COMPLETED

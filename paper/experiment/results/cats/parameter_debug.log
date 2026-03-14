@@ -1,0 +1,35 @@
+=== CATS PARAMETER VERIFICATION AND DEBUGGING ===
+Experiment: experiment-core-prioritization
+Timestamp: 1773481245
+
+🔧 Command line arguments used:
+   argv[1]: --outputDir=paper/experiment/results/cats
+
+📊 All CATS Parameters (configurable via command line):
+   Debt High Watermarks:
+     --ns3::TcpCats::DebtHighWatermarkP0=value (default: 60000)
+     --ns3::TcpCats::DebtHighWatermarkP1=value (default: 48000)
+     --ns3::TcpCats::DebtHighWatermarkP2=value (default: 36000)
+     --ns3::TcpCats::DebtHighWatermarkP3=value (default: 24000)
+
+   Debt Low Watermarks:
+     --ns3::TcpCats::DebtLowWatermarkP0=value  (default: 30000)
+     --ns3::TcpCats::DebtLowWatermarkP1=value  (default: 24000)
+     --ns3::TcpCats::DebtLowWatermarkP2=value  (default: 18000)
+     --ns3::TcpCats::DebtLowWatermarkP3=value  (default: 12000)
+
+   Payback Multipliers:
+     --ns3::TcpCats::PaybackMultiplierP0=value (default: 2.0)
+     --ns3::TcpCats::PaybackMultiplierP1=value (default: 1.6)
+     --ns3::TcpCats::PaybackMultiplierP2=value (default: 1.2)
+     --ns3::TcpCats::PaybackMultiplierP3=value (default: 0.8)
+     --ns3::TcpCats::PaybackMultiplierP4=value (default: 0.4)
+
+=== SIMULATION LOG ===
+CATS Socket Configuration started at 1s:
+  TcpL4Protocol linked to CATS socket at 1s
+  RTT Estimator: RttMeanDeviation configured at 1s
+  Congestion Control: BBR configured at 1s
+  Recovery Algorithm: PRR configured at 1s
+  CATS socket registered with TcpL4Protocol at 1s
+

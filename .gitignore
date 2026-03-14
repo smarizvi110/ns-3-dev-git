@@ -10,6 +10,7 @@
 *.cwnd
 *.dat
 *.log
+!paper/experiment/results/**/parameter_debug.log
 *.mob
 *.pcap
 *.plt
@@ -50,3 +51,6 @@ vcpkg/
 
 # Ignore local cache used by e.g. clangd
 .cache/
+
+# Local staging area for non-paper artifacts and temporary outputs
+.paper-local/

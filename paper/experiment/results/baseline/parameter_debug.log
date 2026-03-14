@@ -1,0 +1,19 @@
+=== BASELINE TCP CONFIGURATION AND DEBUGGING ===
+Experiment: experiment-baseline-tcp
+Timestamp: 1773481250
+
+🔧 Command line arguments used:
+   argv[1]: --outputDir=paper/experiment/results/baseline
+
+📊 TCP Configuration (same as CATS baseline):
+   Congestion Control: BBR (same as CATS)
+   Recovery Algorithm: PRR (same as CATS)
+   RTT Estimator: RttMeanDeviation (same as CATS)
+   Priority Awareness: NONE (standard TCP FIFO)
+
+=== SIMULATION LOG ===
+Baseline TCP Socket Configuration started at 1s:
+  Congestion Control: BBR configured at 1s
+  Recovery Algorithm: PRR configured at 1s
+  RTT Estimator: RttMeanDeviation configured at 1s
+

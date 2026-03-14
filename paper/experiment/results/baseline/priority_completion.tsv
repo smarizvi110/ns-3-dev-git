@@ -1,0 +1,48 @@
+# Baseline TCP Priority Group Completion Analysis
+# ================================================================
+#
+# This experiment shows standard TCP behavior without CATS queue jumping.
+# Priority groups are sent in REVERSE order but TCP delivers in FIFO order.
+# Priority tags are preserved but ignored by standard TCP.
+#
+# SENDING ORDER (same as CATS experiment):
+# 1st: P4 Analytics/Tracking (150KB) - LARGEST, lowest priority
+# 2nd: P3 Images/Media (60KB) - large
+# 3rd: P2 Application JS (40KB) - medium
+# 4th: P1 CSS Framework (25KB) - small
+# 5th: P0 Critical HTML/CSS (8KB) - SMALLEST, highest priority
+#
+# EXPECTED TCP DELIVERY ORDER (FIFO):
+# P4 completes first despite being lowest priority
+# P3, P2, P1 complete in send order
+# P0 completes last despite being highest priority
+#
+# This demonstrates the baseline TCP behavior:
+# No priority awareness - delivery follows send order
+# Critical content (P0) waits behind bulk data (P4)
+# ================================================================
+#
+# TSV FILE FORMAT AND INTERPRETATION GUIDE:
+# ===========================================
+#
+# Columns:
+# 1. SimTime(s)        - Absolute simulation time when group completed
+# 2. PageID           - Page identifier (always 0 in single-page experiment)
+# 3. Priority         - CATS priority level (0=highest, 4=lowest)
+# 4. CompletionTime(ms) - Relative completion time from first byte received
+# 5. Event            - Always 'GROUP_COMPLETED' for this experiment
+#
+# HOW TO INTERPRET THE RESULTS:
+# - Lower CompletionTime(ms) = Faster delivery
+# - TCP FIFO: P4 should have lowest CompletionTime (fastest)
+# - TCP FIFO: P0 should have highest CompletionTime (slowest)
+# - TCP Success: P4 < P3 < P2 < P1 < P0 completion times
+# - Compare with CATS: CATS should show P0 < P1 < P2 < P3 < P4
+#
+# ================================================================
+# Format: SimTime(s)	PageID	Priority	CompletionTime(ms)	Event
+1.951144	0	4	764.000000	GROUP_COMPLETED
+2.205064	0	3	1018.000000	GROUP_COMPLETED
+2.374344	0	2	1187.000000	GROUP_COMPLETED
+2.480144	0	1	1293.000000	GROUP_COMPLETED
+2.514000	0	0	1327.000000	GROUP_COMPLETED
