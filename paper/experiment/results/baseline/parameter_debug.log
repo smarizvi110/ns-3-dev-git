@@ -1,6 +1,15 @@
 === BASELINE TCP CONFIGURATION AND DEBUGGING ===
 Experiment: experiment-baseline-tcp
-Timestamp: 1773481250
+Timestamp: 1773483622
+
+Resolved run settings:
+  simTime: 10s
+  bottleneckBw: 2Mbps
+  bottleneckDelay: 50ms
+  accessBw: 10Mbps
+  accessDelay: 5ms
+  outputDir: paper/experiment/results/baseline
+  enablePcap: false
 
 🔧 Command line arguments used:
    argv[1]: --outputDir=paper/experiment/results/baseline

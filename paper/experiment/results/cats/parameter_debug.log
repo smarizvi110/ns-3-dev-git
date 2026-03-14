@@ -1,11 +1,20 @@
 === CATS PARAMETER VERIFICATION AND DEBUGGING ===
 Experiment: experiment-core-prioritization
-Timestamp: 1773481245
+Timestamp: 1773483617
+
+Resolved run settings:
+  simTime: 10s
+  bottleneckBw: 2Mbps
+  bottleneckDelay: 50ms
+  accessBw: 10Mbps
+  accessDelay: 5ms
+  outputDir: paper/experiment/results/cats
+  enablePcap: false
 
 🔧 Command line arguments used:
    argv[1]: --outputDir=paper/experiment/results/cats
 
-📊 All CATS Parameters (configurable via command line):
+📊 CATS parameter reference (defaults unless overridden via command line):
    Debt High Watermarks:
      --ns3::TcpCats::DebtHighWatermarkP0=value (default: 60000)
      --ns3::TcpCats::DebtHighWatermarkP1=value (default: 48000)
