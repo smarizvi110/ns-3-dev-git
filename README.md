@@ -5,7 +5,7 @@
 > **"A Case for CATS: A Conductor-driven Asymmetric Transport Scheme for Semantic Prioritization"** (ICIC 2025).
 >
 > * **[📄 IEEE Xplore Article](https://ieeexplore.ieee.org/document/11413235)**
-> * **[🔓 arXiv Preprint (Coming Soon)](https://arxiv.org/abs/XXXX.XXXXX)**
+> * **[🔓 arXiv Version](https://arxiv.org/abs/2603.13945)**
 > * **[🏠 Project Hub](https://github.com/smarizvi110/CATS)**
 
 ## Where to find the CATS modifications
